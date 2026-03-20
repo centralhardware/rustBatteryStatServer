@@ -17,13 +17,13 @@ async fn main() {
         .init();
 
     let clickhouse_url =
-        env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".into());
+        env::var("CH_URL").unwrap_or_else(|_| "http://localhost:8123".into());
     let clickhouse_db =
-        env::var("CLICKHOUSE_DB").unwrap_or_else(|_| "default".into());
+        env::var("CH_DB").unwrap_or_else(|_| "default".into());
     let clickhouse_user =
-        env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
+        env::var("CH_USER").unwrap_or_else(|_| "default".into());
     let clickhouse_password =
-        env::var("CLICKHOUSE_PASSWORD").unwrap_or_default();
+        env::var("CH_PASSWORD").unwrap_or_default();
     let port: u16 = env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
