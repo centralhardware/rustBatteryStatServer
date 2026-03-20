@@ -47,7 +47,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
             type=semver,pattern={{version}}
 
       - name: Build and push Docker image
