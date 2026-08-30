@@ -15,6 +15,12 @@ impl BatteryRepository {
         Self { client }
     }
 
+    /// Round trip to ClickHouse: the server is useless without it, so this is
+    /// what the /ping health check answers on.
+    pub async fn ping(&self) -> Result<(), clickhouse::error::Error> {
+        self.client.query("SELECT 1").execute().await
+    }
+
     pub async fn save(&self, health: BatteryHealth) -> Result<(), clickhouse::error::Error> {
         let mut insert = self.client.insert("battery_health")?;
         insert.write(&health).await?;
