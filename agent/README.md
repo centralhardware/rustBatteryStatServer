@@ -1,7 +1,7 @@
 # battery-agent
 
 A macOS LaunchDaemon that reads the battery directly from IOKit (`AppleSmartBattery`)
-and posts a sample to `POST /api/battery/health` every 5 minutes. It replaces the old
+and posts a sample to `POST /api/battery/health` every minute. It replaces the old
 `scripts/report_battery_health.sh` and sends the same payload.
 
 ## Install
