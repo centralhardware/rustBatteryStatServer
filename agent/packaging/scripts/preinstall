@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stop a previous version so the binary can be replaced.
+/bin/launchctl bootout system/me.centralhardware.battery-agent 2>/dev/null || true
+exit 0
