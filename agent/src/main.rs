@@ -1,6 +1,6 @@
 //! Reads AppleSmartBattery via IOKit and POSTs samples to BatteryStatServer.
 //! Runs resident as a root LaunchDaemon (see packaging/): one sample every
-//! 30 seconds, plus one immediately whenever the power source changes.
+//! 10 seconds, plus one immediately whenever the power source changes.
 //!
 //! Server URL: $BATTERY_AGENT_URL, else `ServerURL` in
 //! /Library/Preferences/me.centralhardware.battery-agent.plist (the installer
@@ -17,7 +17,7 @@ use std::time::Duration;
 
 const PREFS_PATH: &str = "/Library/Preferences/me.centralhardware.battery-agent.plist";
 const ENDPOINT: &str = "/api/battery/health";
-const INTERVAL: Duration = Duration::from_secs(30);
+const INTERVAL: Duration = Duration::from_secs(10);
 /// The gas gauge reports 65535 when a time estimate is unavailable.
 const NO_ESTIMATE: i64 = 65535;
 
