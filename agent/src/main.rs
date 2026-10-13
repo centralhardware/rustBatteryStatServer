@@ -81,25 +81,65 @@ fn main() -> ExitCode {
         .timeout(Duration::from_secs(20))
         .build();
 
+    // Sending runs on its own thread, so a hung or offline network never
+    // delays sampling; samples it can't deliver wait in the on-disk queue.
+    let (samples, outbox) = mpsc::channel::<BatteryHealth>();
+    std::thread::spawn(move || deliver(&agent, &outbox));
+
     let (tx, rx) = mpsc::channel();
     iokit::on_power_source_change(tx);
     println!("started, sampling every {}s", interval().as_secs());
 
-    let mut failing = false;
+    let mut collect_failed = false;
     loop {
-        let result = collect().and_then(|p| {
-            let url = server_url().ok_or_else(|| format!("ServerURL is not set in {PREFS_PATH}"));
-            // Older samples go first, so the queue keeps them in order.
-            if queue::is_empty()
-                && let Ok(url) = &url
-                && send(&agent, url, &p).is_ok()
-            {
-                return Ok(());
+        match collect() {
+            Ok(sample) => {
+                collect_failed = false;
+                if samples.send(sample).is_err() {
+                    eprintln!("sender thread died");
+                    return ExitCode::FAILURE;
+                }
             }
-            queue::push(&p);
-            let url = url?;
-            queue::flush(|q| send(&agent, &url, q))
-        });
+            Err(e) if !collect_failed => {
+                eprintln!("{e}");
+                collect_failed = true;
+            }
+            Err(_) => {}
+        }
+        // Wake on the timer or a power event; collapse bursts of events into one sample.
+        let _ = rx.recv_timeout(interval());
+        while rx.try_recv().is_ok() {}
+    }
+}
+
+/// Sends samples as they arrive, oldest first: queued ones before new ones.
+#[cfg(target_os = "macos")]
+fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
+    let mut failing = false;
+    while let Ok(first) = outbox.recv() {
+        // Everything that piled up while the previous send was hanging.
+        let batch: Vec<_> = std::iter::once(first).chain(outbox.try_iter()).collect();
+        let result = match server_url().ok_or_else(|| format!("ServerURL is not set in {PREFS_PATH}")) {
+            Err(e) => {
+                batch.iter().for_each(queue::push);
+                Err(e)
+            }
+            Ok(url) if queue::is_empty() => {
+                let mut result = Ok(());
+                for (i, sample) in batch.iter().enumerate() {
+                    if let Err(e) = send(agent, &url, sample) {
+                        batch[i..].iter().for_each(queue::push);
+                        result = Err(e);
+                        break;
+                    }
+                }
+                result
+            }
+            Ok(url) => {
+                batch.iter().for_each(queue::push);
+                queue::flush(|q| send(agent, &url, q))
+            }
+        };
         match result {
             Ok(()) if failing => {
                 println!("reporting recovered");
@@ -113,9 +153,6 @@ fn main() -> ExitCode {
             }
             Err(_) => {}
         }
-        // Wake on the timer or a power event; collapse bursts of events into one sample.
-        let _ = rx.recv_timeout(interval());
-        while rx.try_recv().is_ok() {}
     }
 }
 
