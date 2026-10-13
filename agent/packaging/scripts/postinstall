@@ -1,0 +1,7 @@
+#!/bin/sh
+PLIST=/Library/LaunchDaemons/me.centralhardware.battery-agent.plist
+/usr/sbin/chown root:wheel "$PLIST" /usr/local/libexec/battery-agent
+/bin/chmod 644 "$PLIST"
+/bin/launchctl bootstrap system "$PLIST"
+/bin/launchctl enable system/me.centralhardware.battery-agent
+exit 0
