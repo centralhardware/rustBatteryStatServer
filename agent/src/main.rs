@@ -3,7 +3,8 @@
 //! 30 seconds, plus one immediately whenever the power source changes.
 //!
 //! Server URL: $BATTERY_AGENT_URL, else `ServerURL` in
-//! /Library/Preferences/me.centralhardware.battery-agent.plist, else the default.
+//! /Library/Preferences/me.centralhardware.battery-agent.plist (the installer
+//! asks for it). It is re-read every cycle, so changing it needs no restart.
 //! `--dry-run` prints one payload without sending it.
 
 mod iokit;
@@ -13,7 +14,6 @@ use std::process::ExitCode;
 use std::sync::mpsc;
 use std::time::Duration;
 
-const DEFAULT_URL: &str = "https://bs.centralhardware.me/api/battery/health";
 const PREFS_PATH: &str = "/Library/Preferences/me.centralhardware.battery-agent.plist";
 const INTERVAL: Duration = Duration::from_secs(30);
 /// The gas gauge reports 65535 when a time estimate is unavailable.
@@ -39,7 +39,6 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let url = server_url();
     let tls = match native_tls::TlsConnector::new() {
         Ok(t) => std::sync::Arc::new(t),
         Err(e) => {
@@ -55,11 +54,14 @@ fn main() -> ExitCode {
 
     let (tx, rx) = mpsc::channel();
     iokit::on_power_source_change(tx);
-    println!("started, reporting to {url} every {}s", INTERVAL.as_secs());
+    println!("started, sampling every {}s", INTERVAL.as_secs());
 
     let mut failing = false;
     loop {
-        match collect().and_then(|p| send(&agent, &url, &p)) {
+        let result = server_url()
+            .ok_or_else(|| format!("ServerURL is not set in {PREFS_PATH}"))
+            .and_then(|url| collect().and_then(|p| send(&agent, &url, &p)));
+        match result {
             Ok(()) if failing => {
                 println!("reporting recovered");
                 failing = false;
@@ -86,14 +88,16 @@ fn send(agent: &ureq::Agent, url: &str, payload: &Value) -> Result<(), String> {
     }
 }
 
-fn server_url() -> String {
-    if let Ok(url) = std::env::var("BATTERY_AGENT_URL") {
-        return url;
-    }
-    plist::Value::from_file(PREFS_PATH)
-        .ok()
-        .and_then(|v| v.as_dictionary()?.get("ServerURL")?.as_string().map(str::to_owned))
-        .unwrap_or_else(|| DEFAULT_URL.to_owned())
+fn server_url() -> Option<String> {
+    std::env::var("BATTERY_AGENT_URL").ok().or_else(|| {
+        plist::Value::from_file(PREFS_PATH)
+            .ok()?
+            .as_dictionary()?
+            .get("ServerURL")?
+            .as_string()
+            .filter(|u| !u.is_empty())
+            .map(str::to_owned)
+    })
 }
 
 fn collect() -> Result<Value, String> {
