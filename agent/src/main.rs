@@ -1,10 +1,11 @@
 //! Reads AppleSmartBattery via IOKit and POSTs samples to BatteryStatServer.
 //! Runs resident as a root LaunchDaemon (see packaging/): one sample every
-//! 10 seconds, plus one immediately whenever the power source changes.
+//! `IntervalSeconds` (default 10), plus one immediately whenever the power
+//! source changes.
 //!
 //! Server URL: $BATTERY_AGENT_URL, else `ServerURL` in
 //! /Library/Preferences/me.centralhardware.battery-agent.plist (the installer
-//! asks for it). It is re-read every cycle, so changing it needs no restart.
+//! asks for it). Preferences are re-read every cycle, so changes need no restart.
 //! `--dry-run` prints one payload without sending it; `--dump` prints the raw
 //! AppleSmartBattery properties.
 
@@ -17,7 +18,8 @@ use std::time::Duration;
 
 const PREFS_PATH: &str = "/Library/Preferences/me.centralhardware.battery-agent.plist";
 const ENDPOINT: &str = "/api/battery/health";
-const INTERVAL: Duration = Duration::from_secs(10);
+const DEFAULT_INTERVAL_SECS: u64 = 10;
+const MIN_INTERVAL_SECS: u64 = 5;
 /// The gas gauge reports 65535 when a time estimate is unavailable.
 const NO_ESTIMATE: i64 = 65535;
 
@@ -61,7 +63,7 @@ fn main() -> ExitCode {
 
     let (tx, rx) = mpsc::channel();
     iokit::on_power_source_change(tx);
-    println!("started, sampling every {}s", INTERVAL.as_secs());
+    println!("started, sampling every {}s", interval().as_secs());
 
     let mut failing = false;
     loop {
@@ -82,7 +84,7 @@ fn main() -> ExitCode {
             Err(_) => {}
         }
         // Wake on the timer or a power event; collapse bursts of events into one sample.
-        let _ = rx.recv_timeout(INTERVAL);
+        let _ = rx.recv_timeout(interval());
         while rx.try_recv().is_ok() {}
     }
 }
@@ -95,17 +97,22 @@ fn send(agent: &ureq::Agent, url: &str, payload: &Value) -> Result<(), String> {
     }
 }
 
+fn pref(key: &str) -> Option<plist::Value> {
+    plist::Value::from_file(PREFS_PATH).ok()?.as_dictionary()?.get(key).cloned()
+}
+
 fn server_url() -> Option<String> {
-    std::env::var("BATTERY_AGENT_URL").ok().or_else(|| {
-        plist::Value::from_file(PREFS_PATH)
-            .ok()?
-            .as_dictionary()?
-            .get("ServerURL")?
-            .as_string()
-            .filter(|u| !u.is_empty())
-            .map(str::to_owned)
-    })
-    .map(|url| endpoint(&url))
+    std::env::var("BATTERY_AGENT_URL")
+        .ok()
+        .or_else(|| pref("ServerURL")?.into_string().filter(|u| !u.is_empty()))
+        .map(|url| endpoint(&url))
+}
+
+fn interval() -> Duration {
+    let secs = pref("IntervalSeconds")
+        .and_then(|v| v.as_unsigned_integer())
+        .unwrap_or(DEFAULT_INTERVAL_SECS);
+    Duration::from_secs(secs.max(MIN_INTERVAL_SECS))
 }
 
 /// Accepts either the server's base URL or the full endpoint URL.
