@@ -22,7 +22,7 @@ Uninstall with **Uninstall battery-agent.command** from the same dmg.
 ## Configure
 
 No server is built in. The installer asks for the endpoint URL on first install, e.g.
-`https://bs.example.com/api/battery/health`. Until it is set, the agent only logs that it is missing. To set it or change it
+`https://bs.example.com` (the `/api/battery/health` path is optional). Until it is set, the agent only logs that it is missing. To set it or change it
 (it takes effect on the next cycle, with no restart needed):
 
     sudo defaults write /Library/Preferences/me.centralhardware.battery-agent ServerURL https://host/api/battery/health
@@ -32,6 +32,7 @@ No server is built in. The installer asks for the endpoint URL on first install,
 ## Debug
 
     /usr/local/libexec/battery-agent --dry-run           # print the payload, send nothing
+    /usr/local/libexec/battery-agent --dump              # raw AppleSmartBattery properties
     tail -f /Library/Logs/battery-agent.log
     sudo launchctl kickstart -k system/me.centralhardware.battery-agent   # restart
 

@@ -151,7 +151,7 @@ fn to_json(value: &CFType) -> Value {
     }
     if value.downcast::<CFData>().is_some() {
         // Raw blobs (e.g. firmware data) are not needed for the report.
-        return Value::Null;
+        return Value::String("<data>".into());
     }
     Value::Null
 }

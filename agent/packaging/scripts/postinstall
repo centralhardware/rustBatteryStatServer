@@ -7,7 +7,7 @@ if ! /usr/bin/defaults read "$PREFS" ServerURL >/dev/null 2>&1; then
     CONSOLE_USER=$(/usr/bin/stat -f %Su /dev/console)
     if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
         URL=$(/bin/launchctl asuser "$(/usr/bin/id -u "$CONSOLE_USER")" /usr/bin/osascript \
-            -e 'text returned of (display dialog "BatteryStatServer endpoint URL:" default answer "https://" with title "battery-agent")' 2>/dev/null)
+            -e 'text returned of (display dialog "BatteryStatServer URL:" default answer "https://" with title "battery-agent")' 2>/dev/null)
         case "$URL" in
             http://?*|https://?*) /usr/bin/defaults write "$PREFS" ServerURL -string "$URL" ;;
         esac

@@ -5,7 +5,8 @@
 //! Server URL: $BATTERY_AGENT_URL, else `ServerURL` in
 //! /Library/Preferences/me.centralhardware.battery-agent.plist (the installer
 //! asks for it). It is re-read every cycle, so changing it needs no restart.
-//! `--dry-run` prints one payload without sending it.
+//! `--dry-run` prints one payload without sending it; `--dump` prints the raw
+//! AppleSmartBattery properties.
 
 mod iokit;
 
@@ -15,11 +16,17 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 const PREFS_PATH: &str = "/Library/Preferences/me.centralhardware.battery-agent.plist";
+const ENDPOINT: &str = "/api/battery/health";
 const INTERVAL: Duration = Duration::from_secs(30);
 /// The gas gauge reports 65535 when a time estimate is unavailable.
 const NO_ESTIMATE: i64 = 65535;
 
 fn main() -> ExitCode {
+    if std::env::args().any(|a| a == "--dump") {
+        let props = iokit::properties("AppleSmartBattery").unwrap_or_default();
+        println!("{}", serde_json::to_string_pretty(&props).unwrap());
+        return ExitCode::SUCCESS;
+    }
     if std::env::args().any(|a| a == "--dry-run") {
         return match collect() {
             Ok(p) => {
@@ -98,6 +105,13 @@ fn server_url() -> Option<String> {
             .filter(|u| !u.is_empty())
             .map(str::to_owned)
     })
+    .map(|url| endpoint(&url))
+}
+
+/// Accepts either the server's base URL or the full endpoint URL.
+fn endpoint(url: &str) -> String {
+    let base = url.trim_end_matches('/');
+    if base.ends_with(ENDPOINT) { base.to_owned() } else { format!("{base}{ENDPOINT}") }
 }
 
 fn collect() -> Result<Value, String> {
