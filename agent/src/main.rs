@@ -119,15 +119,17 @@ fn collect() -> Result<Value, String> {
         .ok_or("cannot read IOPlatformUUID")?;
     let b = iokit::properties("AppleSmartBattery").ok_or("no AppleSmartBattery (is this a laptop?)")?;
     let empty = Map::new();
+    // macOS 27 moved most gauge readings from the top level into BatteryData.
     let data = b.get("BatteryData").and_then(Value::as_object).unwrap_or(&empty);
+    let get = |key: &str| int(&b, key).or_else(|| int(data, key));
     let adapter = b.get("AdapterDetails").and_then(Value::as_object).unwrap_or(&empty);
 
-    let cycle_count = int(&b, "CycleCount").ok_or("no CycleCount")?;
-    let design = int(&b, "DesignCapacity").unwrap_or(0);
-    let raw_max = int(&b, "AppleRawMaxCapacity").unwrap_or(0);
+    let cycle_count = get("CycleCount").ok_or("no CycleCount")?;
+    let design = get("DesignCapacity").unwrap_or(0);
+    let raw_max = get("AppleRawMaxCapacity").unwrap_or(0);
 
-    let current = int(&b, "CurrentCapacity").unwrap_or(0);
-    let max = int(&b, "MaxCapacity").unwrap_or(0);
+    let current = get("CurrentCapacity").unwrap_or(0);
+    let max = get("MaxCapacity").unwrap_or(0);
     let current_charge = if max > 0 { current * 100 / max } else { 0 };
 
     let cells: Vec<i64> = data
@@ -137,48 +139,48 @@ fn collect() -> Result<Value, String> {
         .unwrap_or_default();
     let cell = |i: usize| cells.get(i).copied().unwrap_or(0);
 
-    let time_estimate = |key| int(&b, key).filter(|&v| v != NO_ESTIMATE).unwrap_or(0);
+    let time_estimate = |key| get(key).filter(|&v| v != NO_ESTIMATE).unwrap_or(0);
 
     Ok(json!({
         "deviceId": device_id,
         "cycleCount": cycle_count,
-        "healthPercent": health_percent(&b, data, design, raw_max),
+        "healthPercent": health_percent(&get, design, raw_max),
         "currentCharge": current_charge,
         "temperature": centi(&b, "Temperature"),
         "isCharging": flag(&b, "IsCharging"),
         "designCapacityMah": design,
         "maxCapacityMah": raw_max,
-        "voltageMv": int(&b, "Voltage").unwrap_or(0),
-        "currentMa": int(&b, "InstantAmperage").unwrap_or(0),
+        "voltageMv": get("Voltage").unwrap_or(0),
+        "currentMa": get("InstantAmperage").unwrap_or(0),
         "avgTimeToEmpty": time_estimate("AvgTimeToEmpty"),
         "avgTimeToFull": time_estimate("AvgTimeToFull"),
         "externalConnected": flag(&b, "ExternalConnected"),
         "fullyCharged": flag(&b, "FullyCharged"),
-        "nominalChargeCapacity": int(&b, "NominalChargeCapacity").unwrap_or(0),
-        "rawCurrentCapacity": int(&b, "AppleRawCurrentCapacity").unwrap_or(0),
-        "rawBatteryVoltage": int(&b, "AppleRawBatteryVoltage").unwrap_or(0),
+        "nominalChargeCapacity": get("NominalChargeCapacity").unwrap_or(0),
+        "rawCurrentCapacity": get("AppleRawCurrentCapacity").unwrap_or(0),
+        "rawBatteryVoltage": get("AppleRawBatteryVoltage").unwrap_or(0),
         "virtualTemperature": centi(&b, "VirtualTemperature"),
         "cellVoltage1": cell(0),
         "cellVoltage2": cell(1),
         "cellVoltage3": cell(2),
         "atCriticalLevel": flag(&b, "AtCriticalLevel"),
-        "batteryCellDisconnectCount": int(&b, "BatteryCellDisconnectCount").unwrap_or(0),
+        "batteryCellDisconnectCount": get("BatteryCellDisconnectCount").unwrap_or(0),
         "adapterWatts": int(adapter, "Watts").unwrap_or(0),
         "adapterName": adapter.get("Name").and_then(Value::as_str).unwrap_or("").trim(),
         "adapterVoltage": int(adapter, "AdapterVoltage").unwrap_or(0),
-        "designCycleCount": int(&b, "DesignCycleCount9C").unwrap_or(0),
+        "designCycleCount": get("DesignCycleCount9C").unwrap_or(0),
     }))
 }
 
 /// The "Maximum Capacity" figure System Information shows. Newer macOS
 /// publishes it directly; otherwise derive it from raw vs design capacity.
-fn health_percent(b: &Map<String, Value>, data: &Map<String, Value>, design: i64, raw_max: i64) -> i64 {
-    int(b, "MaximumCapacityPercent")
-        .or_else(|| int(data, "MaximumCapacityPercent"))
-        .unwrap_or_else(|| {
-            let nominal = int(b, "NominalChargeCapacity").filter(|&n| n > 0).unwrap_or(raw_max);
-            if design > 0 { ((nominal * 100 + design / 2) / design).min(100) } else { 0 }
-        })
+/// System Information's "Maximum Capacity" is nominal / design capacity,
+/// rounded up (4224 / 4629 mAh shows as 92%).
+fn health_percent(get: &impl Fn(&str) -> Option<i64>, design: i64, raw_max: i64) -> i64 {
+    get("MaximumCapacityPercent").unwrap_or_else(|| {
+        let nominal = get("NominalChargeCapacity").filter(|&n| n > 0).unwrap_or(raw_max);
+        if design > 0 { ((nominal * 100 + design - 1) / design).min(100) } else { 0 }
+    })
 }
 
 fn int(m: &Map<String, Value>, key: &str) -> Option<i64> {
