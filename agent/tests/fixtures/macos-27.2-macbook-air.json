@@ -1,0 +1,20 @@
+{
+  "CycleCount": 241,
+  "CurrentCapacity": 80,
+  "MaxCapacity": 100,
+  "Voltage": 12370,
+  "AppleRawBatteryVoltage": 12370,
+  "IsCharging": false,
+  "ExternalConnected": true,
+  "FullyCharged": false,
+  "AtCriticalLevel": false,
+  "DesignCycleCount9C": 1000,
+  "AvgTimeToEmpty": 65535,
+  "AdapterDetails": {"Watts": 27, "Name": "35W USB-C Power Adapter ", "AdapterVoltage": 20000},
+  "BatteryData": {
+    "CurrentCapacity": 80, "AppleRawMaxCapacity": 4097, "AppleRawCurrentCapacity": 3211,
+    "AbsoluteCapacity": 0, "AvgTimeToEmpty": 65535, "DesignCapacity": 4629,
+    "NominalChargeCapacity": 4224, "FullChargeCapacity": 4097, "MaxCapacity": 100,
+    "FullyCharged": 0, "RemainingCapacity": 3211, "BatteryPower": 0, "TrueRemainingCapacity": 0
+  }
+}

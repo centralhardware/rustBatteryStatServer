@@ -18,12 +18,21 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 name = "battery-agent"
 version = "0.1.0"
 dependencies = [
+ "battery-model",
  "core-foundation",
  "core-foundation-sys",
  "native-tls",
  "plist",
+ "serde",
  "serde_json",
  "ureq",
+]
+
+[[package]]
+name = "battery-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -497,6 +506,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
