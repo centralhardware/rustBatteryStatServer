@@ -1,34 +1,41 @@
-//! Reads AppleSmartBattery via IOKit and POSTs one sample to BatteryStatServer.
-//! launchd runs it periodically as a root LaunchDaemon (see packaging/).
+//! Reads AppleSmartBattery via IOKit and POSTs samples to BatteryStatServer.
+//! Runs resident as a root LaunchDaemon (see packaging/): one sample every
+//! 30 seconds, plus one immediately whenever the power source changes.
 //!
 //! Server URL: $BATTERY_AGENT_URL, else `ServerURL` in
 //! /Library/Preferences/me.centralhardware.battery-agent.plist, else the default.
-//! `--dry-run` prints the payload without sending it.
+//! `--dry-run` prints one payload without sending it.
 
 mod iokit;
 
 use serde_json::{Map, Value, json};
 use std::process::ExitCode;
+use std::sync::mpsc;
 use std::time::Duration;
 
 const DEFAULT_URL: &str = "https://bs.centralhardware.me/api/battery/health";
 const PREFS_PATH: &str = "/Library/Preferences/me.centralhardware.battery-agent.plist";
+const INTERVAL: Duration = Duration::from_secs(30);
 /// The gas gauge reports 65535 when a time estimate is unavailable.
 const NO_ESTIMATE: i64 = 65535;
 
 fn main() -> ExitCode {
-    let dry_run = std::env::args().any(|a| a == "--dry-run");
+    if std::env::args().any(|a| a == "--dry-run") {
+        return match collect() {
+            Ok(p) => {
+                println!("{}", serde_json::to_string_pretty(&p).unwrap());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
-    let payload = match collect() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    if dry_run {
-        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+    // Fail fast on a machine without a battery; launchd won't restart a clean exit.
+    if let Err(e) = collect() {
+        eprintln!("error: {e}");
         return ExitCode::SUCCESS;
     }
 
@@ -43,21 +50,39 @@ fn main() -> ExitCode {
     // native-tls uses the macOS Security framework and the system keychain.
     let agent = ureq::AgentBuilder::new()
         .tls_connector(tls)
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(20))
         .build();
-    match agent.post(&url).send_json(&payload) {
-        Ok(resp) if resp.status() == 201 => {
-            println!("reported: charge {}%, health {}%", payload["currentCharge"], payload["healthPercent"]);
-            ExitCode::SUCCESS
+
+    let (tx, rx) = mpsc::channel();
+    iokit::on_power_source_change(tx);
+    println!("started, reporting to {url} every {}s", INTERVAL.as_secs());
+
+    let mut failing = false;
+    loop {
+        match collect().and_then(|p| send(&agent, &url, &p)) {
+            Ok(()) if failing => {
+                println!("reporting recovered");
+                failing = false;
+            }
+            Ok(()) => {}
+            // Log only the first failure of a streak to keep the log small.
+            Err(e) if !failing => {
+                eprintln!("{e}");
+                failing = true;
+            }
+            Err(_) => {}
         }
-        Ok(resp) => {
-            eprintln!("unexpected HTTP {} from {url}", resp.status());
-            ExitCode::FAILURE
-        }
-        Err(e) => {
-            eprintln!("failed to report to {url}: {e}");
-            ExitCode::FAILURE
-        }
+        // Wake on the timer or a power event; collapse bursts of events into one sample.
+        let _ = rx.recv_timeout(INTERVAL);
+        while rx.try_recv().is_ok() {}
+    }
+}
+
+fn send(agent: &ureq::Agent, url: &str, payload: &Value) -> Result<(), String> {
+    match agent.post(url).send_json(payload) {
+        Ok(resp) if resp.status() == 201 => Ok(()),
+        Ok(resp) => Err(format!("unexpected HTTP {} from {url}", resp.status())),
+        Err(e) => Err(format!("failed to report to {url}: {e}")),
     }
 }
 

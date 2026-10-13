@@ -1,7 +1,9 @@
 # battery-agent
 
 A macOS LaunchDaemon that reads the battery directly from IOKit (`AppleSmartBattery`)
-and posts a sample to `POST /api/battery/health` every minute. It replaces the old
+and posts a sample to `POST /api/battery/health` every 30 seconds, plus one immediately
+whenever the power source changes (adapter plugged in or pulled, charge level change). It stays resident
+(launchd `KeepAlive`) instead of being started again for every sample. It replaces the old
 `scripts/report_battery_health.sh` and sends the same payload.
 
 ## Install
@@ -29,7 +31,7 @@ The default server is `https://bs.centralhardware.me`. To change it:
 
     /usr/local/libexec/battery-agent --dry-run           # print the payload, send nothing
     tail -f /Library/Logs/battery-agent.log
-    sudo launchctl kickstart -k system/me.centralhardware.battery-agent   # run now
+    sudo launchctl kickstart -k system/me.centralhardware.battery-agent   # restart
 
 ## Build
 

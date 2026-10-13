@@ -13,7 +13,10 @@ use core_foundation_sys::dictionary::CFMutableDictionaryRef;
 use core_foundation_sys::number::CFNumberIsFloatType;
 use core_foundation_sys::string::CFStringRef;
 use serde_json::{Map, Value};
-use std::ffi::{CString, c_char};
+use core_foundation::runloop::{CFRunLoop, CFRunLoopSource, kCFRunLoopDefaultMode};
+use core_foundation_sys::runloop::CFRunLoopSourceRef;
+use std::ffi::{CString, c_char, c_void};
+use std::sync::mpsc::Sender;
 
 type IoObject = u32;
 type KernReturn = i32;
@@ -36,6 +39,32 @@ unsafe extern "C" {
         options: u32,
     ) -> CFTypeRef;
     fn IOObjectRelease(object: IoObject) -> KernReturn;
+    fn IOPSNotificationCreateRunLoopSource(
+        callback: extern "C" fn(*mut c_void),
+        context: *mut c_void,
+    ) -> CFRunLoopSourceRef;
+}
+
+extern "C" fn power_source_changed(context: *mut c_void) {
+    let tx = unsafe { &*(context as *const Sender<()>) };
+    let _ = tx.send(());
+}
+
+/// Sends `()` on `tx` each time the power source changes (adapter plugged in
+/// or pulled, charge level change). Runs a CFRunLoop on a background thread.
+pub fn on_power_source_change(tx: Sender<()>) {
+    std::thread::spawn(move || {
+        // The run loop never exits, so the sender lives for the whole process.
+        let context = Box::into_raw(Box::new(tx)) as *mut c_void;
+        let source = unsafe { IOPSNotificationCreateRunLoopSource(power_source_changed, context) };
+        if source.is_null() {
+            eprintln!("power source notifications unavailable; using the timer only");
+            return;
+        }
+        let source = unsafe { CFRunLoopSource::wrap_under_create_rule(source) };
+        CFRunLoop::get_current().add_source(&source, unsafe { kCFRunLoopDefaultMode });
+        CFRunLoop::run_current();
+    });
 }
 
 struct Service(IoObject);
