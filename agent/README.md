@@ -27,6 +27,10 @@ No server is built in. The installer asks for the endpoint URL on first install,
 
     sudo defaults write /Library/Preferences/me.centralhardware.battery-agent ServerURL https://host/api/battery/health
 
+If the server has `API_TOKEN` set, store the same token:
+
+    sudo defaults write /Library/Preferences/me.centralhardware.battery-agent AuthToken -string <token>
+
 Sampling interval in seconds (default 10, minimum 5):
 
     sudo defaults write /Library/Preferences/me.centralhardware.battery-agent IntervalSeconds -int 30

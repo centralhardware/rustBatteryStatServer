@@ -1,4 +1,3 @@
-mod model;
 mod repository;
 mod routes;
 
@@ -34,7 +33,12 @@ async fn main() {
 
     let repository = BatteryRepository::new(&clickhouse_url, &clickhouse_db, &clickhouse_user, &clickhouse_password);
 
-    let app = battery_routes(Arc::new(repository));
+    let token = env::var("API_TOKEN").ok().filter(|t| !t.is_empty());
+    if token.is_none() {
+        tracing::warn!("API_TOKEN is not set: POST /api/battery/health accepts anyone");
+    }
+
+    let app = battery_routes(Arc::new(repository), token);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
         .await

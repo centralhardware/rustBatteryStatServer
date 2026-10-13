@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     tags: ['agent-v*']
-    paths: ['agent/**', '.github/workflows/agent.yml']
+    paths: ['agent/**', 'model/**', '.github/workflows/agent.yml']
   pull_request:
-    paths: ['agent/**', '.github/workflows/agent.yml']
+    paths: ['agent/**', 'model/**', '.github/workflows/agent.yml']
 
 permissions:
   contents: write
@@ -20,6 +20,9 @@ jobs:
         with:
           target: aarch64-apple-darwin,x86_64-apple-darwin
           cache-workspaces: agent
+      - name: Test
+        working-directory: agent
+        run: cargo test
       - name: Build dmg
         working-directory: agent
         run: |
