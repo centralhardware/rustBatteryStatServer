@@ -1,7 +1,8 @@
 //! Reads AppleSmartBattery via IOKit and POSTs samples to BatteryStatServer.
 //! Runs resident as a root LaunchDaemon (see packaging/): one sample every
 //! `IntervalSeconds` (default 10), plus one immediately whenever the power
-//! source changes.
+//! source changes. Each sample also covers any iPhone plugged in by USB (see
+//! iphone.rs), reported under its UDID.
 //!
 //! Server URL: $BATTERY_AGENT_URL, else `ServerURL` in
 //! /Library/Preferences/me.centralhardware.battery-agent.plist (the installer
@@ -9,10 +10,13 @@
 //! Preferences are re-read every cycle, so changes need no restart.
 //! Samples that can't be delivered wait in an on-disk queue (see queue.rs).
 //! `--dry-run` prints one payload without sending it; `--dump` prints the raw
-//! AppleSmartBattery properties.
+//! AppleSmartBattery properties (`--dump-iphone`: those of USB-connected iPhones).
 
 #[cfg(target_os = "macos")]
 mod iokit;
+
+#[cfg(target_os = "macos")]
+mod iphone;
 
 #[cfg(target_os = "macos")]
 mod queue;
@@ -49,10 +53,32 @@ fn main() -> ExitCode {
         println!("{}", serde_json::to_string_pretty(&props).unwrap());
         return ExitCode::SUCCESS;
     }
+    if std::env::args().any(|a| a == "--dump-iphone") {
+        let reader = match iphone::Reader::new() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let dump: serde_json::Map<_, _> = reader
+            .read_all()
+            .into_iter()
+            .map(|r| (r.udid, r.battery.map_or_else(serde_json::Value::String, serde_json::Value::Object)))
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&dump).unwrap());
+        return ExitCode::SUCCESS;
+    }
     if std::env::args().any(|a| a == "--dry-run") {
         return match collect() {
             Ok(p) => {
                 println!("{}", serde_json::to_string_pretty(&p).unwrap());
+                if let Ok(reader) = iphone::Reader::new() {
+                    let mut errors = std::collections::HashMap::new();
+                    for p in collect_iphones(&reader, &mut errors) {
+                        println!("{}", serde_json::to_string_pretty(&p).unwrap());
+                    }
+                }
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -86,6 +112,10 @@ fn main() -> ExitCode {
     let (samples, outbox) = mpsc::channel::<BatteryHealth>();
     std::thread::spawn(move || deliver(&agent, &outbox));
 
+    let iphones = iphone::Reader::new().map_err(|e| eprintln!("iPhone sampling off: {e}")).ok();
+    // Last error per iPhone, so a locked or untrusted phone is logged once, not every cycle.
+    let mut iphone_errors = std::collections::HashMap::new();
+
     let (tx, rx) = mpsc::channel();
     iokit::on_power_source_change(tx);
     println!("started, sampling every {}s", interval().as_secs());
@@ -105,6 +135,12 @@ fn main() -> ExitCode {
                 collect_failed = true;
             }
             Err(_) => {}
+        }
+        for sample in iphones.iter().flat_map(|r| collect_iphones(r, &mut iphone_errors)) {
+            if samples.send(sample).is_err() {
+                eprintln!("sender thread died");
+                return ExitCode::FAILURE;
+            }
         }
         // Wake on the timer or a power event; collapse bursts of events into one sample.
         let _ = rx.recv_timeout(interval());
@@ -204,4 +240,35 @@ fn collect() -> Result<BatteryHealth, String> {
     let b = iokit::properties("AppleSmartBattery").ok_or("no AppleSmartBattery (is this a laptop?)")?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
     battery_agent::payload::build(&device_id, &b, now)
+}
+
+/// Samples of the iPhones connected by USB. A device that can't be read is
+/// logged when its error changes and logged again once it recovers.
+#[cfg(target_os = "macos")]
+fn collect_iphones(
+    reader: &iphone::Reader,
+    errors: &mut std::collections::HashMap<String, String>,
+) -> Vec<BatteryHealth> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
+    let mut samples = Vec::new();
+    for reading in reader.read_all() {
+        let sample = reading
+            .battery
+            .and_then(|b| battery_agent::payload::build(&reading.udid, &b, now));
+        match sample {
+            Ok(s) => {
+                if errors.remove(&reading.udid).is_some() {
+                    println!("iPhone {}: reading recovered", reading.udid);
+                }
+                samples.push(s);
+            }
+            Err(e) => {
+                if errors.get(&reading.udid) != Some(&e) {
+                    eprintln!("iPhone {}: {e}", reading.udid);
+                    errors.insert(reading.udid, e);
+                }
+            }
+        }
+    }
+    samples
 }
