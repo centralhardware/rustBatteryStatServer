@@ -6,6 +6,12 @@ whenever the power source changes (adapter plugged in or pulled, charge level ch
 (launchd `KeepAlive`) instead of being started again for every sample. It replaces the old
 `scripts/report_battery_health.sh` and sends the same payload.
 
+Every cycle also samples any iPhone (or iPad) plugged into the Mac by USB, reported under its
+UDID as `deviceId`. It reads the phone's AppleSmartBattery through usbmuxd and lockdownd (pure Rust,
+nothing extra to install), so the phone must be unlocked once and have trusted this Mac
+("Trust This Computer?"). Phones synced over Wi-Fi are skipped. A phone that can't be read
+is logged once and doesn't hold up the Mac's own sample.
+
 ## Install
 
 Download the `.dmg` from the `agent-v*` releases (or the workflow artifact), open it and
@@ -41,6 +47,7 @@ Sampling interval in seconds (default 10, minimum 5):
 
     /usr/local/libexec/battery-agent --dry-run           # print the payload, send nothing
     /usr/local/libexec/battery-agent --dump              # raw AppleSmartBattery properties
+    sudo /usr/local/libexec/battery-agent --dump-iphone  # the same, for USB-connected iPhones
     tail -f /Library/Logs/battery-agent.log
     sudo launchctl kickstart -k system/me.centralhardware.battery-agent   # restart
 
