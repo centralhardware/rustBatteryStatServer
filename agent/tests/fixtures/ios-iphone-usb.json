@@ -1,0 +1,45 @@
+{
+  "AdapterDetails": {
+    "AdapterID": 0,
+    "AdapterPowerTier": 2,
+    "AdapterVoltage": 5000,
+    "Current": 3000,
+    "Description": "pd charger",
+    "IsWireless": false,
+    "Watts": 15
+  },
+  "Amperage": 1619,
+  "AppleRawBatteryVoltage": 4244,
+  "AppleRawExternalConnected": true,
+  "AtCriticalLevel": false,
+  "AvgTimeToEmpty": 876,
+  "BatteryData": {
+    "AbsoluteCapacity": 2428,
+    "AppleRawCurrentCapacity": 2365,
+    "AppleRawMaxCapacity": 3250,
+    "AvgTimeToEmpty": 876,
+    "CurrentCapacity": 73,
+    "DesignCapacity": 3544,
+    "FullChargeCapacity": 3250,
+    "FullyCharged": 0,
+    "MaxCapacity": 100,
+    "NominalChargeCapacity": 3170,
+    "RemainingCapacity": 2365
+  },
+  "BatteryInstalled": true,
+  "ChargerData": {
+    "IsCharging": 1,
+    "NotChargingReason": 0
+  },
+  "CurrentCapacity": 73,
+  "CycleCount": 569,
+  "ExternalChargeCapable": true,
+  "ExternalConnected": true,
+  "FullyCharged": false,
+  "InstantAmperage": 1490,
+  "IsCharging": true,
+  "MaxCapacity": 100,
+  "TimeRemaining": 785,
+  "Voltage": 4244,
+  "built-in": true
+}
