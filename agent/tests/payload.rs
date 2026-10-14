@@ -52,3 +52,29 @@ fn top_level_readings() {
 fn no_cycle_count_is_an_error() {
     assert!(build("D", &Map::new(), 0).is_err());
 }
+
+/// An iPhone read over USB (`--dump-iphone`, 2026-10-14, identifiers and the
+/// bulky diagnostic blocks trimmed): the same keys as macOS 27, capacities in
+/// BatteryData, no temperature, and an AdapterDetails without a Name.
+#[test]
+fn iphone_over_usb() {
+    let p = build("UDID", &fixture("ios-iphone-usb.json"), 1_791_965_095).unwrap();
+
+    assert_eq!(p["deviceId"], "UDID");
+    assert_eq!(p["cycleCount"], 569);
+    assert_eq!(p["currentCharge"], 73);
+    assert_eq!(p["designCapacityMah"], 3544);
+    assert_eq!(p["maxCapacityMah"], 3250);
+    assert_eq!(p["nominalChargeCapacity"], 3170);
+    assert_eq!(p["healthPercent"], 90, "3170 / 3544 mAh, rounded up");
+    assert_eq!(p["rawCurrentCapacity"], 2365);
+    assert_eq!(p["voltageMv"], 4244);
+    assert_eq!(p["currentMa"], 1490);
+    assert_eq!(p["avgTimeToEmpty"], 876);
+    assert_eq!(p["isCharging"], true);
+    assert_eq!(p["externalConnected"], true);
+    assert_eq!(p["adapterWatts"], 15);
+    assert_eq!(p["adapterVoltage"], 5000);
+    assert_eq!(p["adapterName"], "");
+    assert_eq!(p["temperature"], Value::Null);
+}
