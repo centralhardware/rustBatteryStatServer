@@ -13,6 +13,11 @@ if ! /usr/bin/defaults read "$PREFS" ServerURL >/dev/null 2>&1; then
         esac
     fi
 fi
+# The prefs hold AuthToken: readable by root only.
+if [ -f "$PREFS.plist" ]; then
+    /usr/sbin/chown root:wheel "$PREFS.plist"
+    /bin/chmod 600 "$PREFS.plist"
+fi
 /usr/sbin/chown root:wheel "$PLIST" /usr/local/libexec/battery-agent
 /bin/chmod 644 "$PLIST"
 /bin/launchctl bootstrap system "$PLIST"
