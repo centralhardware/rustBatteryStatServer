@@ -9,6 +9,7 @@
 //! asks for it), plus an optional `AuthToken` sent as a bearer token.
 //! Preferences are re-read every cycle, so changes need no restart.
 //! Samples that can't be delivered wait in an on-disk queue (see queue.rs).
+//! The console user gets a notification when reporting starts failing and when it recovers.
 //! `--dry-run` prints one payload without sending it; `--dump` prints the raw
 //! AppleSmartBattery properties (`--dump-iphone`: those of USB-connected iPhones).
 
@@ -202,6 +203,7 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
             Ok(()) => {
                 if failing {
                     println!("reporting recovered");
+                    notify("Battery reporting recovered");
                     failing = false;
                 }
                 backoff = Duration::ZERO;
@@ -210,6 +212,7 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
                 // Log only the first failure of a streak to keep the log small.
                 if !failing {
                     eprintln!("{e}");
+                    notify(&format!("Battery report not sent: {e}"));
                     failing = true;
                 }
                 backoff = (backoff * 2).clamp(interval(), MAX_BACKOFF);
@@ -233,6 +236,40 @@ fn send(agent: &ureq::Agent, url: &str, token: Option<&str>, payload: &impl Seri
         }
         Err(e) => Err(SendError::Retry(format!("failed to report to {url}: {e}"))),
     }
+}
+
+/// Shows a macOS notification to whoever is at the console. The agent runs as root under
+/// launchd, which has no GUI session, so the notification is posted as the console user.
+/// Called once per failure streak and once on recovery, never per sample.
+#[cfg(target_os = "macos")]
+fn notify(message: &str) {
+    use std::process::{Command, Stdio};
+    let Some(user) = Command::new("/usr/bin/stat")
+        .args(["-f", "%Su", "/dev/console"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|u| u.trim().to_owned())
+        .filter(|u| !u.is_empty() && u != "root")
+    else {
+        return;
+    };
+    let Some(uid) = Command::new("/usr/bin/id")
+        .args(["-u", &user])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|u| u.trim().to_owned())
+    else {
+        return;
+    };
+    let text = message.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!("display notification \"{text}\" with title \"battery-agent\"");
+    let _ = Command::new("/bin/launchctl")
+        .args(["asuser", &uid, "/usr/bin/osascript", "-e", &script])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 /// The prefs file holds the bearer token; anyone who can read it can post as
