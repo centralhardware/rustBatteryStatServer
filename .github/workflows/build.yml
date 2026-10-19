@@ -28,6 +28,8 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo build --release
         if: github.event_name == 'pull_request'
+      - run: cargo test
+        if: github.event_name == 'pull_request'
 
       - name: Set up Docker Buildx
         if: github.event_name == 'push'

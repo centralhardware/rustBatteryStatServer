@@ -1,6 +1,22 @@
 use battery_model::BatteryHealth;
 use clickhouse::Client;
 
+/// What the routes need from storage, so they can be tested against a fake.
+pub trait Store: Send + Sync + 'static {
+    fn ping(&self) -> impl Future<Output = Result<(), String>> + Send;
+    fn save(&self, health: BatteryHealth) -> impl Future<Output = Result<(), String>> + Send;
+}
+
+impl Store for BatteryRepository {
+    async fn ping(&self) -> Result<(), String> {
+        BatteryRepository::ping(self).await.map_err(|e| e.to_string())
+    }
+
+    async fn save(&self, health: BatteryHealth) -> Result<(), String> {
+        BatteryRepository::save(self, health).await.map_err(|e| e.to_string())
+    }
+}
+
 pub struct BatteryRepository {
     client: Client,
 }

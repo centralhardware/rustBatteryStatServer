@@ -19,8 +19,7 @@ mod iokit;
 mod iphone;
 
 #[cfg(target_os = "macos")]
-mod queue;
-
+use battery_agent::queue::{Queue, SendError};
 #[cfg(target_os = "macos")]
 use battery_model::BatteryHealth;
 #[cfg(target_os = "macos")]
@@ -29,10 +28,15 @@ use std::process::ExitCode;
 #[cfg(target_os = "macos")]
 use std::sync::mpsc;
 #[cfg(target_os = "macos")]
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "macos")]
 const PREFS_PATH: &str = "/Library/Preferences/me.centralhardware.battery-agent.plist";
+#[cfg(target_os = "macos")]
+const QUEUE_PATH: &str = "/Library/Application Support/battery-agent/queue.jsonl";
+/// Longest wait between attempts to drain the queue while the server is down.
+#[cfg(target_os = "macos")]
+const MAX_BACKOFF: Duration = Duration::from_secs(300);
 #[cfg(target_os = "macos")]
 const ENDPOINT: &str = "/api/battery/health";
 #[cfg(target_os = "macos")]
@@ -109,6 +113,8 @@ fn main() -> ExitCode {
 
     // Sending runs on its own thread, so a hung or offline network never
     // delays sampling; samples it can't deliver wait in the on-disk queue.
+    warn_if_prefs_readable();
+
     let (samples, outbox) = mpsc::channel::<BatteryHealth>();
     std::thread::spawn(move || deliver(&agent, &outbox));
 
@@ -149,59 +155,98 @@ fn main() -> ExitCode {
 }
 
 /// Sends samples as they arrive, oldest first: queued ones before new ones.
+/// While the server keeps failing, the queue is retried with a growing pause
+/// (up to `MAX_BACKOFF`) instead of being reread and rewritten every cycle.
 #[cfg(target_os = "macos")]
 fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
+    let queue = Queue::new(QUEUE_PATH);
     let mut failing = false;
+    let mut backoff = Duration::ZERO;
+    let mut next_try = Instant::now();
     while let Ok(first) = outbox.recv() {
         // Everything that piled up while the previous send was hanging.
         let batch: Vec<_> = std::iter::once(first).chain(outbox.try_iter()).collect();
+        // Read once per batch rather than once per queued sample.
+        let token = pref("AuthToken").and_then(|v| v.into_string()).filter(|t| !t.is_empty());
+        let send_one = |url: &str, sample: &BatteryHealth| send(agent, url, token.as_deref(), sample);
         let result = match server_url().ok_or_else(|| format!("ServerURL is not set in {PREFS_PATH}")) {
             Err(e) => {
-                batch.iter().for_each(queue::push);
+                batch.iter().for_each(|s| queue.push(s));
                 Err(e)
             }
-            Ok(url) if queue::is_empty() => {
+            Ok(_) if Instant::now() < next_try => {
+                batch.iter().for_each(|s| queue.push(s));
+                continue;
+            }
+            Ok(url) if queue.is_empty() => {
                 let mut result = Ok(());
                 for (i, sample) in batch.iter().enumerate() {
-                    if let Err(e) = send(agent, &url, sample) {
-                        batch[i..].iter().for_each(queue::push);
-                        result = Err(e);
-                        break;
+                    match send_one(&url, sample) {
+                        Ok(()) => {}
+                        Err(SendError::Permanent(e)) => eprintln!("dropping a sample: {e}"),
+                        Err(SendError::Retry(e)) => {
+                            batch[i..].iter().for_each(|s| queue.push(s));
+                            result = Err(e);
+                            break;
+                        }
                     }
                 }
                 result
             }
             Ok(url) => {
-                batch.iter().for_each(queue::push);
-                queue::flush(|q| send(agent, &url, q))
+                batch.iter().for_each(|s| queue.push(s));
+                queue.flush(|q| send_one(&url, q))
             }
         };
         match result {
-            Ok(()) if failing => {
-                println!("reporting recovered");
-                failing = false;
+            Ok(()) => {
+                if failing {
+                    println!("reporting recovered");
+                    failing = false;
+                }
+                backoff = Duration::ZERO;
             }
-            Ok(()) => {}
-            // Log only the first failure of a streak to keep the log small.
-            Err(e) if !failing => {
-                eprintln!("{e}");
-                failing = true;
+            Err(e) => {
+                // Log only the first failure of a streak to keep the log small.
+                if !failing {
+                    eprintln!("{e}");
+                    failing = true;
+                }
+                backoff = (backoff * 2).clamp(interval(), MAX_BACKOFF);
+                next_try = Instant::now() + backoff;
             }
-            Err(_) => {}
         }
     }
 }
 
 #[cfg(target_os = "macos")]
-fn send(agent: &ureq::Agent, url: &str, payload: &impl Serialize) -> Result<(), String> {
+fn send(agent: &ureq::Agent, url: &str, token: Option<&str>, payload: &impl Serialize) -> Result<(), SendError> {
     let mut req = agent.post(url);
-    if let Some(token) = pref("AuthToken").and_then(|v| v.into_string()).filter(|t| !t.is_empty()) {
+    if let Some(token) = token {
         req = req.set("Authorization", &format!("Bearer {token}"));
     }
     match req.send_json(payload) {
         Ok(resp) if resp.status() == 201 => Ok(()),
-        Ok(resp) => Err(format!("unexpected HTTP {} from {url}", resp.status())),
-        Err(e) => Err(format!("failed to report to {url}: {e}")),
+        Ok(resp) => Err(SendError::Retry(format!("unexpected HTTP {} from {url}", resp.status()))),
+        Err(ureq::Error::Status(code, _)) => {
+            Err(SendError::from_status(code, format!("HTTP {code} from {url}")))
+        }
+        Err(e) => Err(SendError::Retry(format!("failed to report to {url}: {e}"))),
+    }
+}
+
+/// The prefs file holds the bearer token; anyone who can read it can post as
+/// this Mac. `postinstall` makes it 0600, but `defaults write` may recreate it.
+#[cfg(target_os = "macos")]
+fn warn_if_prefs_readable() {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(PREFS_PATH)
+        && meta.permissions().mode() & 0o077 != 0
+        && pref("AuthToken").is_some()
+    {
+        eprintln!(
+            "warning: {PREFS_PATH} is readable by other users and holds AuthToken; run: sudo chmod 600 {PREFS_PATH}"
+        );
     }
 }
 

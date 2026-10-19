@@ -36,6 +36,7 @@ No server is built in. The installer asks for the endpoint URL on first install,
 If the server has `API_TOKEN` set, store the same token:
 
     sudo defaults write /Library/Preferences/me.centralhardware.battery-agent AuthToken -string <token>
+    sudo chmod 600 /Library/Preferences/me.centralhardware.battery-agent.plist   # the token is a secret
 
 Sampling interval in seconds (default 10, minimum 5):
 
