@@ -9,7 +9,8 @@
 //! asks for it), plus an optional `AuthToken` sent as a bearer token.
 //! Preferences are re-read every cycle, so changes need no restart.
 //! Samples that can't be delivered wait in an on-disk queue (see queue.rs).
-//! The console user gets a notification when reporting starts failing and when it recovers.
+//! The console user gets a notification once reporting has been failing for
+//! `NOTIFY_AFTER` (so the brief outage right after wake stays silent) and when it recovers.
 //! `--dry-run` prints one payload without sending it; `--dump` prints the raw
 //! AppleSmartBattery properties (`--dump-iphone`: those of USB-connected iPhones).
 
@@ -38,6 +39,10 @@ const QUEUE_PATH: &str = "/Library/Application Support/battery-agent/queue.jsonl
 /// Longest wait between attempts to drain the queue while the server is down.
 #[cfg(target_os = "macos")]
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
+/// How long sends must keep failing before the console user is told. Covers
+/// the seconds after wake from sleep before Wi-Fi and DNS come back.
+#[cfg(target_os = "macos")]
+const NOTIFY_AFTER: Duration = Duration::from_secs(600);
 #[cfg(target_os = "macos")]
 const ENDPOINT: &str = "/api/battery/health";
 #[cfg(target_os = "macos")]
@@ -161,7 +166,9 @@ fn main() -> ExitCode {
 #[cfg(target_os = "macos")]
 fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
     let queue = Queue::new(QUEUE_PATH);
-    let mut failing = false;
+    // When the current failure streak began, and whether the user was told about it.
+    let mut failing_since: Option<Instant> = None;
+    let mut notified = false;
     let mut backoff = Duration::ZERO;
     let mut next_try = Instant::now();
     while let Ok(first) = outbox.recv() {
@@ -201,19 +208,23 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
         };
         match result {
             Ok(()) => {
-                if failing {
+                if failing_since.take().is_some() {
                     println!("reporting recovered");
-                    notify("Battery reporting recovered");
-                    failing = false;
+                    if std::mem::take(&mut notified) {
+                        notify("Battery reporting recovered");
+                    }
                 }
                 backoff = Duration::ZERO;
             }
             Err(e) => {
                 // Log only the first failure of a streak to keep the log small.
-                if !failing {
+                let since = *failing_since.get_or_insert_with(|| {
                     eprintln!("{e}");
+                    Instant::now()
+                });
+                if !notified && since.elapsed() >= NOTIFY_AFTER {
                     notify(&format!("Battery report not sent: {e}"));
-                    failing = true;
+                    notified = true;
                 }
                 backoff = (backoff * 2).clamp(interval(), MAX_BACKOFF);
                 next_try = Instant::now() + backoff;
@@ -239,34 +250,20 @@ fn send(agent: &ureq::Agent, url: &str, token: Option<&str>, payload: &impl Seri
 }
 
 /// Shows a macOS notification to whoever is at the console. The agent runs as root under
-/// launchd, which has no GUI session, so the notification is posted as the console user.
+/// launchd, which has no GUI session, and macOS offers daemons no notification API of their
+/// own (UserNotifications needs an app bundle in the user's session), so the notification
+/// is posted by osascript run as the console user.
 /// Called once per failure streak and once on recovery, never per sample.
 #[cfg(target_os = "macos")]
 fn notify(message: &str) {
     use std::process::{Command, Stdio};
-    let Some(user) = Command::new("/usr/bin/stat")
-        .args(["-f", "%Su", "/dev/console"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|u| u.trim().to_owned())
-        .filter(|u| !u.is_empty() && u != "root")
-    else {
-        return;
-    };
-    let Some(uid) = Command::new("/usr/bin/id")
-        .args(["-u", &user])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|u| u.trim().to_owned())
-    else {
+    let Some(uid) = iokit::console_uid() else {
         return;
     };
     let text = message.replace('\\', "\\\\").replace('"', "\\\"");
     let script = format!("display notification \"{text}\" with title \"battery-agent\"");
     let _ = Command::new("/bin/launchctl")
-        .args(["asuser", &uid, "/usr/bin/osascript", "-e", &script])
+        .args(["asuser", &uid.to_string(), "/usr/bin/osascript", "-e", &script])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();

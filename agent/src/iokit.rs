@@ -45,6 +45,22 @@ unsafe extern "C" {
     ) -> CFRunLoopSourceRef;
 }
 
+#[link(name = "SystemConfiguration", kind = "framework")]
+unsafe extern "C" {
+    fn SCDynamicStoreCopyConsoleUser(store: *const c_void, uid: *mut u32, gid: *mut u32) -> CFStringRef;
+}
+
+/// UID of the user logged in at the console, or `None` at the login window.
+pub fn console_uid() -> Option<u32> {
+    let mut uid = 0;
+    let name = unsafe { SCDynamicStoreCopyConsoleUser(std::ptr::null(), &mut uid, std::ptr::null_mut()) };
+    if name.is_null() {
+        return None;
+    }
+    let name = unsafe { CFString::wrap_under_create_rule(name) }.to_string();
+    (name != "loginwindow" && uid != 0).then_some(uid)
+}
+
 extern "C" fn power_source_changed(context: *mut c_void) {
     let tx = unsafe { &*(context as *const Sender<()>) };
     let _ = tx.send(());
