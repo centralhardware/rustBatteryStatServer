@@ -43,7 +43,7 @@ impl BatteryRepository {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs() as u32);
         }
-        let mut insert = self.client.insert("battery_health_buffer")?;
+        let mut insert = self.client.insert::<BatteryHealth>("battery_health_buffer").await?;
         insert.write(&health).await?;
         insert.end().await?;
 

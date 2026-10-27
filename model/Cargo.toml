@@ -9,5 +9,5 @@ description = "The battery sample shared by battery-agent and BatteryStatServer"
 clickhouse = ["dep:clickhouse"]
 
 [dependencies]
-clickhouse = { version = "0.13", optional = true }
+clickhouse = { version = "0.15", optional = true }
 serde = { version = "1", features = ["derive"] }
