@@ -1,4 +1,4 @@
-FROM rust:1.88 AS builder
+FROM rust:1.99 AS builder
 
 WORKDIR /app
 # Build dependencies against a stub main first, so this layer is cached
