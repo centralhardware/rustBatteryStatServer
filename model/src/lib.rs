@@ -1,4 +1,4 @@
-//! One battery sample: the JSON body of `POST /api/battery/health` (camelCase)
+//! One battery sample: the JSON body of `POST /api/battery/health`
 //! and a row of ClickHouse `battery_health` (snake_case, field order = columns).
 //! `None` marks a reading this Mac doesn't publish.
 
@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "clickhouse", derive(clickhouse::Row))]
-#[serde(rename_all = "camelCase")]
 pub struct BatteryHealth {
     /// Sampling time, unix seconds (ClickHouse `DateTime`). The agent may deliver
     /// queued samples late; 0 or missing means "now" to the server.

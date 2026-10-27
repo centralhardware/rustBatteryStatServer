@@ -5,8 +5,8 @@ lives in [`agent/`](agent/README.md).
 
 ## API
 
-- `POST /api/battery/health`: one sample as JSON (camelCase fields of
-  [`BatteryHealth`](src/model.rs)), answered with `201`. `dateTime` is the sampling
+- `POST /api/battery/health`: one sample as JSON (snake_case fields of
+  [`BatteryHealth`](model/src/lib.rs)), answered with `201`. `date_time` is the sampling
   time in unix seconds; if it's missing, the time of arrival is used.
   When `API_TOKEN` is set, requests must carry `Authorization: Bearer <API_TOKEN>`.
 - `GET /ping`: `200` if ClickHouse answers, `503` if not. The Docker health check uses it.
