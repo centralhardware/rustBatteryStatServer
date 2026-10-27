@@ -28,7 +28,6 @@ dependencies = [
  "core-foundation",
  "core-foundation-sys",
  "idevice",
- "native-tls",
  "plist",
  "serde",
  "serde_json",

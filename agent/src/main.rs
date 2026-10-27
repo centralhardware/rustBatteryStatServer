@@ -104,18 +104,16 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let tls = match native_tls::TlsConnector::new() {
-        Ok(t) => std::sync::Arc::new(t),
-        Err(e) => {
-            eprintln!("TLS setup failed: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
     // native-tls uses the macOS Security framework and the system keychain.
-    let agent = ureq::AgentBuilder::new()
-        .tls_connector(tls)
-        .timeout(Duration::from_secs(20))
+    let tls = ureq::tls::TlsConfig::builder()
+        .provider(ureq::tls::TlsProvider::NativeTls)
+        .root_certs(ureq::tls::RootCerts::PlatformVerifier)
         .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .tls_config(tls)
+        .timeout_global(Some(Duration::from_secs(20)))
+        .build()
+        .into();
 
     // Sending runs on its own thread, so a hung or offline network never
     // delays sampling; samples it can't deliver wait in the on-disk queue.
@@ -237,12 +235,12 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
 fn send(agent: &ureq::Agent, url: &str, token: Option<&str>, payload: &impl Serialize) -> Result<(), SendError> {
     let mut req = agent.post(url);
     if let Some(token) = token {
-        req = req.set("Authorization", &format!("Bearer {token}"));
+        req = req.header("Authorization", &format!("Bearer {token}"));
     }
     match req.send_json(payload) {
         Ok(resp) if resp.status() == 201 => Ok(()),
         Ok(resp) => Err(SendError::Retry(format!("unexpected HTTP {} from {url}", resp.status()))),
-        Err(ureq::Error::Status(code, _)) => {
+        Err(ureq::Error::StatusCode(code)) => {
             Err(SendError::from_status(code, format!("HTTP {code} from {url}")))
         }
         Err(e) => Err(SendError::Retry(format!("failed to report to {url}: {e}"))),
