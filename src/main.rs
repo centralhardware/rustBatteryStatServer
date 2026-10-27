@@ -1,6 +1,5 @@
 mod repository;
 mod routes;
-mod row;
 
 use crate::repository::BatteryRepository;
 use crate::routes::battery_routes;

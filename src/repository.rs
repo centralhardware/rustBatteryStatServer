@@ -1,8 +1,6 @@
 use battery_model::BatteryHealth;
 use clickhouse::Client;
 
-use crate::row::BatteryRow;
-
 /// What the routes need from storage, so they can be tested against a fake.
 pub trait Store: Send + Sync + 'static {
     fn ping(&self) -> impl Future<Output = Result<(), String>> + Send;
@@ -45,8 +43,8 @@ impl BatteryRepository {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs() as u32);
         }
-        let mut insert = self.client.insert::<BatteryRow>("battery_health_buffer").await?;
-        insert.write(&BatteryRow::from(health.clone())).await?;
+        let mut insert = self.client.insert::<BatteryHealth>("battery_health_buffer").await?;
+        insert.write(&health).await?;
         insert.end().await?;
 
         tracing::info!(

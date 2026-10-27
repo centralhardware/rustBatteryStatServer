@@ -7,7 +7,7 @@ whenever the power source changes (adapter plugged in or pulled, charge level ch
 `scripts/report_battery_health.sh` and sends the same payload.
 
 Every cycle also samples any iPhone (or iPad) plugged into the Mac by USB, reported under its
-UDID as `deviceId`. It reads the phone's AppleSmartBattery through usbmuxd and lockdownd (pure Rust,
+UDID as `device_id`. It reads the phone's AppleSmartBattery through usbmuxd and lockdownd (pure Rust,
 nothing extra to install), so the phone must be unlocked once and have trusted this Mac
 ("Trust This Computer?"). Phones synced over Wi-Fi are skipped. A phone that can't be read
 is logged once and doesn't hold up the Mac's own sample.
