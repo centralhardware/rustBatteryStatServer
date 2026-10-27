@@ -4,10 +4,5 @@ version = "0.1.0"
 edition = "2024"
 description = "The battery sample shared by battery-agent and BatteryStatServer"
 
-[features]
-# Derives clickhouse::Row for the server; the agent doesn't need it.
-clickhouse = ["dep:clickhouse"]
-
 [dependencies]
-clickhouse = { version = "0.15", optional = true }
 serde = { version = "1", features = ["derive"] }

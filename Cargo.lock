@@ -94,7 +94,6 @@ dependencies = [
 name = "battery-model"
 version = "0.1.0"
 dependencies = [
- "clickhouse",
  "serde",
 ]
 
