@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   dmg:
@@ -41,3 +42,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" agent/target/*.dmg --title "battery-agent ${GITHUB_REF_NAME#agent-v}" --generate-notes
+      # main is protected, so the cask bump goes through a PR.
+      - name: Bump Homebrew cask
+        if: startsWith(github.ref, 'refs/tags/agent-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#agent-v}"
+          SHA=$(shasum -a 256 "agent/target/battery-agent-$VERSION.dmg" | cut -d' ' -f1)
+          git fetch origin main && git checkout -B "cask-$VERSION" origin/main
+          sed -i '' -e "s/^  version \".*\"/  version \"$VERSION\"/" -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" Casks/battery-agent.rb
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -am "Cask: battery-agent $VERSION"
+          git push -f origin "cask-$VERSION"
+          gh pr create --base main --head "cask-$VERSION" --title "Cask: battery-agent $VERSION" --body "Bumps the Homebrew cask to the $GITHUB_REF_NAME release."
