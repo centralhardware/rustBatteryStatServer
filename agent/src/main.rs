@@ -122,13 +122,13 @@ fn main() -> ExitCode {
     let (samples, outbox) = mpsc::channel::<BatteryHealth>();
     std::thread::spawn(move || deliver(&agent, &outbox));
 
-    let iphones = iphone::Reader::new().map_err(|e| eprintln!("iPhone sampling off: {e}")).ok();
+    let iphones = iphone::Reader::new().map_err(|e| battery_agent::elog!("iPhone sampling off: {e}")).ok();
     // Last error per iPhone, so a locked or untrusted phone is logged once, not every cycle.
     let mut iphone_errors = std::collections::HashMap::new();
 
     let (tx, rx) = mpsc::channel();
     iokit::on_power_source_change(tx);
-    println!("started, sampling every {}s", interval().as_secs());
+    battery_agent::log!("started, sampling every {}s", interval().as_secs());
 
     let mut collect_failed = false;
     loop {
@@ -136,19 +136,19 @@ fn main() -> ExitCode {
             Ok(sample) => {
                 collect_failed = false;
                 if samples.send(sample).is_err() {
-                    eprintln!("sender thread died");
+                    battery_agent::elog!("sender thread died");
                     return ExitCode::FAILURE;
                 }
             }
             Err(e) if !collect_failed => {
-                eprintln!("{e}");
+                battery_agent::elog!("{e}");
                 collect_failed = true;
             }
             Err(_) => {}
         }
         for sample in iphones.iter().flat_map(|r| collect_iphones(r, &mut iphone_errors)) {
             if samples.send(sample).is_err() {
-                eprintln!("sender thread died");
+                battery_agent::elog!("sender thread died");
                 return ExitCode::FAILURE;
             }
         }
@@ -189,7 +189,7 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
                 for (i, sample) in batch.iter().enumerate() {
                     match send_one(&url, sample) {
                         Ok(()) => {}
-                        Err(SendError::Permanent(e)) => eprintln!("dropping a sample: {e}"),
+                        Err(SendError::Permanent(e)) => battery_agent::elog!("dropping a sample: {e}"),
                         Err(SendError::Retry(e)) => {
                             batch[i..].iter().for_each(|s| queue.push(s));
                             result = Err(e);
@@ -207,7 +207,7 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
         match result {
             Ok(()) => {
                 if failing_since.take().is_some() {
-                    println!("reporting recovered");
+                    battery_agent::log!("reporting recovered");
                     if std::mem::take(&mut notified) {
                         notify("Battery reporting recovered");
                     }
@@ -217,7 +217,7 @@ fn deliver(agent: &ureq::Agent, outbox: &mpsc::Receiver<BatteryHealth>) {
             Err(e) => {
                 // Log only the first failure of a streak to keep the log small.
                 let since = *failing_since.get_or_insert_with(|| {
-                    eprintln!("{e}");
+                    battery_agent::elog!("{e}");
                     Instant::now()
                 });
                 if !notified && since.elapsed() >= NOTIFY_AFTER {
@@ -276,7 +276,7 @@ fn warn_if_prefs_readable() {
         && meta.permissions().mode() & 0o077 != 0
         && pref("AuthToken").is_some()
     {
-        eprintln!(
+        battery_agent::elog!(
             "warning: {PREFS_PATH} is readable by other users and holds AuthToken; run: sudo chmod 600 {PREFS_PATH}"
         );
     }
@@ -335,13 +335,13 @@ fn collect_iphones(
         match sample {
             Ok(s) => {
                 if errors.remove(&reading.udid).is_some() {
-                    println!("iPhone {}: reading recovered", reading.udid);
+                    battery_agent::log!("iPhone {}: reading recovered", reading.udid);
                 }
                 samples.push(s);
             }
             Err(e) => {
                 if errors.get(&reading.udid) != Some(&e) {
-                    eprintln!("iPhone {}: {e}", reading.udid);
+                    battery_agent::elog!("iPhone {}: {e}", reading.udid);
                     errors.insert(reading.udid, e);
                 }
             }

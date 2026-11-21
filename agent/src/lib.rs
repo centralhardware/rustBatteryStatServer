@@ -1,4 +1,5 @@
 //! Platform-independent parts of the agent, so they can be tested anywhere.
 
+pub mod log;
 pub mod payload;
 pub mod queue;
