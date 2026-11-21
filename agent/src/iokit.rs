@@ -74,7 +74,7 @@ pub fn on_power_source_change(tx: Sender<()>) {
         let context = Box::into_raw(Box::new(tx)) as *mut c_void;
         let source = unsafe { IOPSNotificationCreateRunLoopSource(power_source_changed, context) };
         if source.is_null() {
-            eprintln!("power source notifications unavailable; using the timer only");
+            log::error!("power source notifications unavailable; using the timer only");
             return;
         }
         let source = unsafe { CFRunLoopSource::wrap_under_create_rule(source) };

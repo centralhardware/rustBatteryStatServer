@@ -11,6 +11,8 @@ plist = "1"
 battery-model = { path = "../model" }
 serde = "1"
 serde_json = "1"
+log = "0.4"
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
 ureq = { version = "3", default-features = false, features = ["json", "native-tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
