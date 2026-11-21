@@ -94,7 +94,7 @@ impl Queue {
             };
             match send(&sample) {
                 Ok(()) => {}
-                Err(SendError::Permanent(e)) => crate::elog!("dropping a queued sample: {e}"),
+                Err(SendError::Permanent(e)) => log::error!("dropping a queued sample: {e}"),
                 Err(SendError::Retry(e)) => {
                     result = Err(e);
                     break;
