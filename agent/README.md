@@ -14,7 +14,12 @@ is logged once and doesn't hold up the Mac's own sample.
 
 ## Install
 
-Download the `.dmg` from the `agent-v*` releases (or the workflow artifact), open it and
+```sh
+brew tap centralhardware/battery-agent https://github.com/centralhardware/rustBatteryStatServer
+brew install --cask battery-agent
+```
+
+or download the `.dmg` from the `agent-v*` releases (or the workflow artifact), open it and
 run **Install battery-agent.pkg**. It installs, as root:
 
 - `/usr/local/libexec/battery-agent`: a universal binary (Apple Silicon and Intel)
@@ -23,7 +28,7 @@ run **Install battery-agent.pkg**. It installs, as root:
 The daemon runs in the system domain, so it reports for every user and at the login window.
 The package is unsigned, so the first time you open it, right-click it and choose Open.
 
-Uninstall with **Uninstall battery-agent.command** from the same dmg.
+Uninstall with `brew uninstall --cask battery-agent` or **Uninstall battery-agent.command** from the same dmg.
 
 ## Configure
 
