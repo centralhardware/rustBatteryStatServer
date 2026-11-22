@@ -1,6 +1,6 @@
 cask "battery-agent" do
-  version "0.1.0"
-  sha256 "5a21c7f97ffed0c0a03b7be0809797145e596352eb180fea241037ae16eab256"
+  version "0.1.1"
+  sha256 "f7c3cebcc2c7e2fad446c4d0cf4f06aebfb95e37953c28b5e6a4bb58d95ce018"
 
   url "https://github.com/centralhardware/rustBatteryStatServer/releases/download/agent-v#{version}/battery-agent-#{version}.dmg"
   name "battery-agent"
