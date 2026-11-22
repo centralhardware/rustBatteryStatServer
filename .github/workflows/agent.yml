@@ -29,6 +29,9 @@ jobs:
         run: |
           if [[ "$GITHUB_REF" == refs/tags/agent-v* ]]; then export VERSION="${GITHUB_REF#refs/tags/agent-v}"; fi
           ./packaging/build-dmg.sh
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
       - name: Smoke test
         working-directory: agent
         # GitHub's macOS runners are VMs with no battery, so only check it fails cleanly.
